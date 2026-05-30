@@ -1,0 +1,13 @@
+{
+  "name": "文综冲刺 · 客观题特训",
+  "short_name": "文综冲刺",
+  "description": "社会·法治中考客观题冲刺：主动回忆＋即时解析＋间隔重复。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "lang": "zh-CN",
+  "icons": []
+}
