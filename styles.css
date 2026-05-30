@@ -143,6 +143,9 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
 /* ---------- 综合题自评 ---------- */
 .subj-prompt{font-size:16px;line-height:1.7;white-space:pre-wrap}
+.card.analysis{background:linear-gradient(180deg,#13294a,#16223b);border-color:#2f4d7a}
+.card.analysis h3{font-size:16px;color:#bfdbfe}
+.subj-analysis{font-size:15px;line-height:1.85;white-space:pre-wrap;color:#dbe7fb}
 .scorelist{list-style:none;padding:0;margin:10px 0}
 .scorelist li{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);
   border-radius:var(--r-sm);margin-bottom:8px;background:var(--card2);cursor:pointer}

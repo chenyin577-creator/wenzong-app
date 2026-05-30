@@ -518,7 +518,7 @@
         '<span class="info"><b>' + esc(q.category || q.subject) + '</b><div class="muted tiny">' + esc((q.prompt || "").slice(0, 28)) + '…</div></span>' + done + '</button>';
     }).join("");
     setScreen('<button class="back" data-action="home">← 返回</button><h2>综合题 · 采分自评 ✍️</h2>' +
-      '<p class="muted tiny">流程：读题 → 在纸上/脑中分点作答 → 展开采分点逐条对照 → 勾出你答到的点，估出采分率。诚实打分才有用。</p>' + items);
+      '<p class="muted tiny">流程：读题 → 在纸上/脑中分点作答 → 看参考答案解析 → 逐条对照采分点、勾出你答到的，估出采分率。诚实打分才有用。</p>' + items);
   }
   function renderSubjective(i) {
     var q = SUBJ[i]; if (!q) { renderSubjectiveList(); return; }
@@ -530,15 +530,16 @@
     var terms = (q.terms || []).map(function (t) { return '<span class="term">' + esc(t) + '</span>'; }).join("");
     var body;
     if (!s.revealed) {
-      body = '<button class="btn primary big" data-action="reveal">我写完了，展开采分点 ▼</button>';
+      body = '<button class="btn primary big" data-action="reveal">我写完了，看参考答案 ▼</button>';
     } else {
       var checkedN = Object.keys(s.checked).filter(function (k) { return s.checked[k]; }).length;
       var lis = (q.scorePoints || []).map(function (p, idx) {
         var on = s.checked[idx];
         return '<li class="' + (on ? 'got' : '') + '" data-action="toggleSP" data-i="' + idx + '"><span class="box">' + (on ? '✓' : '') + '</span><span>' + esc(p) + '</span></li>';
       }).join("");
-      body =
-        '<h3 style="margin-top:14px">采分点（勾出你答到的）</h3>' +
+      var analysisCard = q.analysis ? '<div class="card analysis"><h3 style="margin:0 0 8px">📖 参考答案 · 解析</h3><div class="subj-analysis">' + esc(q.analysis) + '</div></div>' : '';
+      body = analysisCard +
+        '<h3 style="margin-top:14px">采分点（逐条对照，勾出你答到的）</h3>' +
         '<ul class="scorelist">' + lis + '</ul>' +
         '<div class="card center"><div class="muted tiny">本题采分率</div><div style="font-size:34px;font-weight:900">' + checkedN + '<span class="slash muted">/' + (q.scorePoints || []).length + '</span></div></div>' +
         '<button class="btn primary big" data-action="saveSubj">保存自评</button>';
@@ -649,7 +650,8 @@
       }).join("");
       var zak = picked.subjs.map(function (q, i) {
         var pts = (q.scorePoints || []).map(function (p, k) { return '<div class="ak-item">（' + (k + 1) + '）' + esc(p) + '</div>'; }).join("");
-        return '<div style="margin:8px 0"><b>综合 ' + (picked.judges.length + picked.singles.length + i + 1) + '（' + esc(q.category || q.subject) + '）采分点：</b>' + pts + '</div>';
+        var ana = q.analysis ? '<div class="ak-item" style="margin-bottom:4px"><b>解析：</b>' + esc(q.analysis) + '</div>' : '';
+        return '<div style="margin:8px 0"><b>综合 ' + (picked.judges.length + picked.singles.length + i + 1) + '（' + esc(q.category || q.subject) + '）参考答案：</b>' + ana + pts + '</div>';
       }).join("");
       akHtml =
         '<div class="pagebreak"></div>' +
