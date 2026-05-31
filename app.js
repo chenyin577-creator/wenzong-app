@@ -164,6 +164,7 @@
   }
   function bySubject(subj) { return shuffle(Q.filter(function (q) { return q.subject === subj; }).map(function (q) { return q.id; })); }
   function byTrap(trap) { return shuffle(Q.filter(function (q) { return q.trap === trap; }).map(function (q) { return q.id; })); }
+  function byTopic(topic) { return shuffle(Q.filter(function (q) { return q.topic === topic; }).map(function (q) { return q.id; })); }
   // 错题怪兽 = 至少错过一次且尚未掌握(box<4)的题；只做对、还没巩固的"新题"不算错题
   function isWrongish(c) { return c && c.timesSeen > 0 && c.timesCorrect < c.timesSeen && c.box < 4; }
   function beastQids(beast) {
@@ -268,6 +269,7 @@
       '<div class="grid">' +
         tile("achievements", "🏅", "我的成就", "积分 · 等级 · 徽章") +
         tile("subject", "🎯", "专项弱区", "按学科集中刷") +
+        tile("topicGeo", "🌏", "地理专题", "分界线·海峡·区域") +
         tile("trap", "🪤", "陷阱专训", "练审题“找茬”") +
         tile("beasts", "👾", "错题怪兽", wrongN ? (wrongN + " 道待消灭") : "暂无错题") +
         tile("subjective", "✍️", "综合题自评", "采分点对照") +
@@ -930,6 +932,7 @@
       case "daily": startSession(buildDaily(STATE.stats.dailyGoal), "daily", "今日复习"); break;
       case "subject": renderSubjectPick(); break;
       case "subjectGo": startSession(bySubject(t.getAttribute("data-subj")), "subject", t.getAttribute("data-subj")); break;
+      case "topicGeo": startSession(byTopic("地理专题"), "topic", "🌏 地理专题"); break;
       case "trap": renderTrapPick(); break;
       case "trapGo": startSession(byTrap(t.getAttribute("data-trap")), "trap", t.getAttribute("data-trap")); break;
       case "beasts": renderBeasts(); break;
