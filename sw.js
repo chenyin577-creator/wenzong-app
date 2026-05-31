@@ -2,13 +2,13 @@
    作用：首次联网打开后，把整套 App（壳 + 题库）缓存下来，之后断网/弱网也能正常刷题。
    更新策略：HTML 网络优先（联网即拿最新），带版本号的静态资源缓存优先（同版本不变）。
    每次发版：同时 bump 本文件 CACHE 版本号 + index.html 里的 ?v= 资源版本号。 */
-var CACHE = "wenzong-cache-20260531d";
+var CACHE = "wenzong-cache-20260531e";
 var ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=20260531d",
-  "./app.js?v=20260531d",
-  "./questions.js?v=20260531d",
+  "./styles.css?v=20260531e",
+  "./app.js?v=20260531e",
+  "./questions.js?v=20260531e",
   "./manifest.webmanifest"
 ];
 

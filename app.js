@@ -8,6 +8,7 @@
   var EXAM_DATE = new Date(2026, 5, 20);          // 2026-06-20 中考
   var INTERVAL = { 1: 0, 2: 1, 3: 2, 4: 4, 5: 7 };  // 盒→间隔(天)，为冲刺压缩
   var KEY = "wenzong_v1";
+  var LEGACY_RECORDS_KEY = "hz-social-sprint-records-v1";
   var SUBJECTS = ["中国史", "道法", "地理", "世界史", "时政"];
   var WEAK_WEIGHT = { "中国史": 5, "道法": 4, "地理": 3, "世界史": 2, "时政": 1 }; // 越大越优先补
   var DEFAULT_GOAL = 15;
@@ -94,6 +95,71 @@
     catch (e) { DEGRADED = true; MEM = STATE; toast("⚠️ 无法保存进度（隐私模式？），本次记录仅存内存"); }
   }
   var STATE = load();
+
+  function readStorageJSON(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function legacyQid(id) {
+    var m = /^(cn|geo|world|law)-0*(\d+)$/i.exec(id || "");
+    if (!m) return id;
+    var prefix = { cn: "ZGS", geo: "DL", world: "SJS", law: "DF" }[m[1].toLowerCase()];
+    return prefix + "-" + pad(parseInt(m[2], 10));
+  }
+  function dayFromTime(ms) {
+    if (!ms) return todayStr();
+    var d = new Date(ms);
+    return isNaN(d.getTime()) ? todayStr() : toStr(d);
+  }
+  function legacyStateFromStorage() {
+    var old = readStorageJSON(LEGACY_RECORDS_KEY);
+    if (!old || !old.attempts) return null;
+    var out = freshState(), seenSum = 0;
+    out.stats.dailyGoal = old.goal || DEFAULT_GOAL;
+    Object.keys(old.attempts || {}).forEach(function (oldId) {
+      var r = old.attempts[oldId] || {};
+      var seen = (r.correct || 0) + (r.wrong || 0);
+      if (!seen) return;
+      var qid = legacyQid(oldId);
+      var stage = typeof r.stage === "number" ? r.stage : (r.streak || 0);
+      out.byQid[qid] = {
+        box: Math.max(1, Math.min(5, stage + 1)),
+        lastSeen: dayFromTime(r.lastAt),
+        nextDue: dayFromTime(r.dueAt || r.lastAt),
+        timesSeen: seen,
+        timesCorrect: r.correct || 0,
+        streak: r.streak || 0
+      };
+      seenSum += seen;
+    });
+    var byDay = {};
+    (old.log || []).forEach(function (entry) {
+      var d = entry.day || dayFromTime(entry.time);
+      if (!byDay[d]) byDay[d] = { date: d, answered: 0, correct: 0 };
+      byDay[d].answered++;
+      if (entry.correct) byDay[d].correct++;
+    });
+    out.stats.history = Object.keys(byDay).sort().map(function (d) { return byDay[d]; });
+    out.stats.totalAnswered = Math.max(old.log ? old.log.length : 0, seenSum);
+    out.stats.lastStudyDate = out.stats.history.length ? out.stats.history[out.stats.history.length - 1].date : null;
+    out.stats.bestCombo = Math.max.apply(null, [0].concat(Object.keys(out.byQid).map(function (id) { return out.byQid[id].streak || 0; })));
+    out.stats.points = Math.min(4500, (out.stats.totalAnswered || 0) * 8);
+    if (out.stats.totalAnswered >= 100) out.stats.badges.push("累计100题");
+    if (out.stats.totalAnswered >= 300) out.stats.badges.push("累计300题");
+    if (out.stats.totalAnswered >= 500) out.stats.badges.push("累计500题");
+    return out.stats.totalAnswered ? out : null;
+  }
+  function maybeImportLegacy() {
+    var legacy = legacyStateFromStorage();
+    if (!legacy) return 0;
+    if ((legacy.stats.totalAnswered || 0) <= (STATE.stats.totalAnswered || 0) && Object.keys(STATE.byQid || {}).length) return 0;
+    mergeInto(STATE, legacy);
+    save();
+    return legacy.stats.totalAnswered || 0;
+  }
+  var LEGACY_IMPORTED = maybeImportLegacy();
 
   /* ---------------- 卡片/进度 ---------------- */
   function card(qid) {
@@ -285,6 +351,7 @@
       '</div></div>' +
       '<div class="card"><h3 style="font-size:16px">各学科掌握度 <span class="muted tiny">（box≥4 的题占比）</span></h3>' + bars + '</div>' +
       '<div class="grid">' +
+        tile("backup", "📦", "迁移进度", LEGACY_IMPORTED ? ("已识别旧记录 " + LEGACY_IMPORTED + " 条") : "旧版导出 · 新版导入") +
         tile("newDrill", "🆕", "新题特训", newUnseenN ? (newTotal + " 道新增·未做 " + newUnseenN) : (newTotal + " 道新增·已刷完")) +
         tile("achievements", "🏅", "我的成就", "积分 · 等级 · 徽章") +
         tile("subject", "🎯", "专项弱区", "按学科集中刷") +
@@ -809,6 +876,7 @@
 
   /* ===== 进度导出 / 导入（换设备·换入口迁移；合并不覆盖，绝不清空现有进度） ===== */
   function encodeState() {
+    maybeImportLegacy();
     return "WZ1:" + btoa(unescape(encodeURIComponent(JSON.stringify(STATE))));
   }
   function decodeState(code) {
@@ -865,6 +933,12 @@
     mergeInto(STATE, inc); save();
     toast("✅ 导入完成：已合并 " + n + " 题记录");
     renderHome();
+  }
+  function importFromCode(code) {
+    var inc = decodeState(code);
+    var n = Object.keys(inc.byQid || {}).length;
+    mergeInto(STATE, inc); save();
+    return n;
   }
   function renderBackup(mode) {
     SESSION = null;
@@ -1119,6 +1193,20 @@
   }
 
   /* ---- 启动 ---- */
-  if (!Q.length) { setScreen('<div class="card">题库为空：请确认 questions.js 已正确加载。</div>'); return; }
-  renderHome();
+  var bootText = decodeURIComponent((location.search || "") + (location.hash || ""));
+  if (bootText.indexOf("import=") >= 0) {
+    try {
+      var code = bootText.split("import=")[1].split("&")[0].split("#")[0];
+      var imported = importFromCode(code);
+      toast("✅ 已导入 " + imported + " 题记录");
+      history.replaceState(null, "", location.pathname);
+    } catch (e) {}
+  }
+  if (!Q.length && bootText.indexOf("migrate") < 0 && bootText.indexOf("backup") < 0) {
+    setScreen('<div class="card">题库为空：请确认 questions.js 已正确加载。</div><button class="btn primary big" data-action="backup">📦 打开迁移进度</button>');
+    return;
+  }
+  if (bootText.indexOf("migrate") >= 0 || bootText.indexOf("backup") >= 0) renderBackup("menu");
+  else if (bootText.indexOf("exportData") >= 0) renderBackup("export");
+  else renderHome();
 })();
