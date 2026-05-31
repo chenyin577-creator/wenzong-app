@@ -803,7 +803,93 @@
       '<div class="muted tiny">碎片时间建议 10–15 题一轮，随时可停，进度即时保存。</div></div>' +
       '<div class="card"><div class="field"><label>累计数据</label>' +
       '<div class="muted">已作答 ' + (STATE.stats.totalAnswered || 0) + ' 题 · 最高连对 ' + (STATE.stats.bestCombo || 0) + ' · 徽章 ' + (STATE.stats.badges.length || 0) + ' 枚</div></div>' +
+      '<button class="btn sm" data-action="backup" style="margin-right:8px">📦 备份 / 迁移进度</button>' +
       '<button class="btn sm ghost" data-action="resetAsk" style="color:#fca5a5;border-color:#7a2f2f">重置全部进度</button></div>');
+  }
+
+  /* ===== 进度导出 / 导入（换设备·换入口迁移；合并不覆盖，绝不清空现有进度） ===== */
+  function encodeState() {
+    return "WZ1:" + btoa(unescape(encodeURIComponent(JSON.stringify(STATE))));
+  }
+  function decodeState(code) {
+    code = (code || "").trim();
+    var i = code.indexOf("WZ1:"); if (i >= 0) code = code.slice(i + 4);
+    code = code.replace(/\s+/g, "");
+    var obj = JSON.parse(decodeURIComponent(escape(atob(code))));
+    if (!obj || typeof obj !== "object" || !obj.byQid) throw new Error("bad");
+    return obj;
+  }
+  function mergeInto(dst, inc) {
+    inc.byQid = inc.byQid || {};
+    Object.keys(inc.byQid).forEach(function (qid) {
+      var a = dst.byQid[qid], b = inc.byQid[qid];
+      if (!a || (b && (b.timesSeen || 0) > (a.timesSeen || 0))) dst.byQid[qid] = b; // 取练得更多的一条
+    });
+    inc.subjective = inc.subjective || {};
+    Object.keys(inc.subjective).forEach(function (k) {
+      var a = dst.subjective[k], b = inc.subjective[k];
+      if (!a || (b && (b.selfScore || 0) >= (a.selfScore || 0))) dst.subjective[k] = b;
+    });
+    var ds = dst.stats, is = inc.stats || {};
+    ds.totalAnswered = Math.max(ds.totalAnswered || 0, is.totalAnswered || 0);
+    ds.bestCombo = Math.max(ds.bestCombo || 0, is.bestCombo || 0);
+    ds.points = Math.max(ds.points || 0, is.points || 0);
+    ds.revivedTotal = Math.max(ds.revivedTotal || 0, is.revivedTotal || 0);
+    ds.streakDays = Math.max(ds.streakDays || 0, is.streakDays || 0);
+    if (is.lastStudyDate && (!ds.lastStudyDate || is.lastStudyDate > ds.lastStudyDate)) ds.lastStudyDate = is.lastStudyDate;
+    if (is.badges && is.badges.length) {
+      var set = {}; (ds.badges || []).concat(is.badges).forEach(function (b) { set[b] = 1; }); ds.badges = Object.keys(set);
+    }
+    if (is.history && is.history.length > (ds.history || []).length) ds.history = is.history;
+  }
+  function copyExport() {
+    var ta = document.getElementById("expTa"); if (!ta) return;
+    ta.removeAttribute("readonly"); ta.focus(); ta.select();
+    try { ta.setSelectionRange(0, 999999); } catch (e) {}
+    var ok = false; try { ok = document.execCommand("copy"); } catch (e2) {}
+    ta.setAttribute("readonly", "readonly");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(
+        function () { toast("已复制 ✅ 去新版「导入进度」粘贴"); },
+        function () { toast(ok ? "已复制 ✅ 去新版粘贴" : "请长按文本框→全选→拷贝"); }
+      );
+    } else { toast(ok ? "已复制 ✅ 去新版粘贴" : "请长按文本框→全选→拷贝"); }
+  }
+  function doImport() {
+    var ta = document.getElementById("impTa"); if (!ta) return;
+    var inc;
+    try { inc = decodeState(ta.value); }
+    catch (e) { toast("❌ 这段码无法识别，请确认完整复制了 WZ1: 开头那段"); return; }
+    var n = Object.keys(inc.byQid || {}).length;
+    if (!confirm("将导入 " + n + " 道题的记录并与当前进度合并（重复的取记录更多的一方，不会清空现有进度）。继续？")) return;
+    mergeInto(STATE, inc); save();
+    toast("✅ 导入完成：已合并 " + n + " 题记录");
+    renderHome();
+  }
+  function renderBackup(mode) {
+    SESSION = null;
+    var nQ = Object.keys(STATE.byQid).length;
+    if (mode === "export") {
+      setScreen('<button class="back" data-action="backup">← 返回</button><h2>导出进度 📤</h2>' +
+        '<div class="card"><div class="muted">下面是你当前全部进度的“存档码”（含 ' + nQ + ' 题记录 + 积分 / 徽章 / 打卡）。<b>复制</b>它，到另一个版本或手机的「导入进度」里粘贴即可。</div>' +
+        '<textarea id="expTa" readonly rows="6" onclick="this.select()" style="width:100%;margin-top:10px;font-size:12px;word-break:break-all">' + encodeState() + '</textarea>' +
+        '<button class="btn" data-action="copyData" style="margin-top:10px">📋 复制存档码</button>' +
+        '<div class="muted tiny" style="margin-top:8px">复制不了就：长按文本框 → 全选 → 拷贝。</div></div>');
+      return;
+    }
+    if (mode === "import") {
+      setScreen('<button class="back" data-action="backup">← 返回</button><h2>导入进度 📥</h2>' +
+        '<div class="card"><div class="muted">把另一个版本导出的“存档码”粘贴到下面，点导入。<b>会与当前进度合并，不会清空现有记录。</b></div>' +
+        '<textarea id="impTa" rows="6" placeholder="在此粘贴 WZ1: 开头的存档码…" style="width:100%;margin-top:10px;font-size:12px"></textarea>' +
+        '<button class="btn" data-action="impDo" style="margin-top:10px">✅ 导入并合并</button></div>');
+      return;
+    }
+    setScreen('<button class="back" data-action="settings">← 返回</button><h2>备份 / 迁移进度 📦</h2>' +
+      '<div class="card"><div class="muted">换手机、或换打开入口（github.io ↔ 备用链接）时，进度会“看起来消失”——其实是浏览器各存各的。用这里把进度<b>搬过去</b>：旧入口<b>导出</b> → 新入口<b>导入</b>。</div></div>' +
+      '<div class="grid">' +
+        tile("expData", "📤", "导出进度", "生成存档码（含 " + nQ + " 题）") +
+        tile("impOpen", "📥", "导入进度", "粘贴存档码 · 合并") +
+      '</div>');
   }
 
   /* ================= 组卷 / 打印 ================= */
@@ -972,6 +1058,11 @@
       case "genPaper": readExportInputs(); renderPaper(); break;
       case "doPrint": window.print(); break;
       case "settings": renderSettings(); break;
+      case "backup": renderBackup("menu"); break;
+      case "expData": renderBackup("export"); break;
+      case "impOpen": renderBackup("import"); break;
+      case "copyData": copyExport(); break;
+      case "impDo": doImport(); break;
       case "resetAsk":
         if (confirm("确定清空全部刷题进度、打卡和徽章？此操作不可撤销。")) {
           STATE = freshState(); save(); toast("已重置"); renderHome();
