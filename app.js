@@ -366,6 +366,11 @@
     if (disputed) extraLine = '<div class="why muted">此题有争议，以老师讲评为准，不计入分数与掌握度。</div>';
     else if (!correct) extraLine = '<div class="why" style="margin-bottom:8px">' + esc(wrongText(q, info.before.seen)) + '</div>';
 
+    var det = (window.QUESTION_DETAILS && window.QUESTION_DETAILS[q.id]) || null;
+    var layers = "";
+    if (det && det.detail) layers += '<details class="layer"><summary>📖 详细解析</summary><div class="layer-body">' + esc(det.detail) + '</div></details>';
+    if (det && det.extend) layers += '<details class="layer"><summary>🎯 考点 · 真题举例 · 举一反三</summary><div class="layer-body">' + esc(det.extend) + '</div></details>';
+
     var fb = document.getElementById("fb");
     fb.innerHTML =
       '<div class="feedback ' + (disputed ? '' : (correct ? 'ok' : 'bad')) + '">' +
@@ -373,8 +378,10 @@
         '<div class="badges">' + badges + '</div>' +
         extraLine +
         '<div class="why"><b>解析：</b>' + esc(q.why || "") + '</div>' +
+        layers +
         '<div class="cta row">' +
           (!correct && (q.trap || q.beast) ? '<button class="btn sm" data-action="revenge">⚔️ 同类再练3题</button>' : '') +
+          '<button class="btn sm ghost" data-action="askAI">🆘 求助豆包</button>' +
           '<button class="btn primary grow" data-action="next">下一题 →</button>' +
         '</div>' +
       '</div>';
@@ -397,6 +404,66 @@
     for (var i = 0; i < add.length; i++) s.queue.splice(s.idx + 1 + i, 0, add[i]);
     toast("⚔️ 已插入 " + add.length + " 道同类题，立刻巩固！");
     nextQuestion();
+  }
+
+  /* ---- 求助豆包 / AI：拼好提示词→复制→打开豆包，学生粘贴即可 ---- */
+  function buildObjPrompt(q) {
+    var L = "ABCDEFG", lines = [];
+    lines.push("我在备考杭州中考“社会·法治”（闭卷），这道客观题想彻底搞懂，请用初中生能听懂的话讲解：");
+    lines.push("");
+    lines.push("【题目】" + q.stem);
+    if (q.options && q.options.length) for (var i = 0; i < q.options.length; i++) lines.push(L[i] + ". " + q.options[i]);
+    var ans = q.type === "judge" ? (q.answer === "T" ? "正确(T)" : "错误(F)") : (q.type === "multi" ? q.answer.join("") : q.answer);
+    lines.push("【正确答案】" + ans);
+    lines.push("");
+    lines.push("请分点告诉我：①为什么这个答案对；②其他选项／说法错在哪；③这题考什么知识点、怎么记牢；④以后遇到同类题怎么判断，并再给我一道类似的题练手。");
+    return lines.join("\n");
+  }
+  function buildSubjPrompt(q) {
+    var lines = [];
+    lines.push("我在备考杭州中考“社会·法治”（闭卷）综合题，这道材料题我不太会答，请你教我：");
+    lines.push("");
+    lines.push(q.prompt);
+    lines.push("");
+    lines.push("请给出：①分点的参考答案（标出每问得分点）；②每问的答题思路和必须用上的关键词／术语；③我容易漏掉的角度和易错点。");
+    return lines.join("\n");
+  }
+  function askAI() {
+    var s = SESSION, q, text;
+    if (s && s.subjIdx != null) { q = SUBJ[s.subjIdx]; text = buildSubjPrompt(q); }
+    else if (s && s.queue) { q = QBYID[s.queue[s.idx]]; text = buildObjPrompt(q); }
+    else { toast("先打开一道题再求助"); return; }
+    openAskModal(text);
+  }
+  function openAskModal(text) {
+    var ov = document.createElement("div"); ov.className = "ask-overlay";
+    ov.innerHTML =
+      '<div class="ask-modal">' +
+        '<div class="ask-h">🆘 求助豆包 / AI</div>' +
+        '<p class="ask-tip">① 点“复制提问” ② 点“打开豆包” ③ 在豆包对话框里粘贴发送，它会把这题讲懂。也可粘到你常用的任意 AI。</p>' +
+        '<textarea class="ask-text" readonly></textarea>' +
+        '<div class="ask-row">' +
+          '<button class="btn sm primary" data-ask="copy">📋 复制提问</button>' +
+          '<button class="btn sm" data-ask="open">🤖 打开豆包</button>' +
+          '<button class="btn sm ghost" data-ask="close">关闭</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var ta = ov.querySelector(".ask-text"); ta.value = text;
+    setTimeout(function () { try { ta.focus(); ta.select(); } catch (e) {} }, 30);
+    on(ov, "click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest("[data-ask]") : null;
+      if (!b) { if (e.target === ov) ov.remove(); return; }
+      var act = b.getAttribute("data-ask");
+      if (act === "copy") toast(copyText(text, ta) ? "✅ 已复制，去豆包粘贴发送" : "请在框里长按全选手动复制");
+      else if (act === "open") window.open("https://www.doubao.com/", "_blank");
+      else if (act === "close") ov.remove();
+    });
+  }
+  function copyText(text, ta) {
+    try { if (ta) { ta.focus(); ta.select(); if (ta.setSelectionRange) ta.setSelectionRange(0, String(text).length); } if (document.execCommand("copy")) return true; } catch (e) {}
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); return true; } } catch (e) {}
+    return false;
   }
 
   /* ---- 每日统计 / 打卡 / 徽章 ---- */
@@ -550,7 +617,8 @@
       '<div class="card"><div class="subj-prompt">' + esc(q.prompt) + '</div></div>' +
       (q.tip ? '<div class="card tiny"><b>答题套路：</b>' + esc(q.tip) + '</div>' : '') +
       (terms ? '<div class="card"><div class="muted tiny" style="margin-bottom:6px">建议用上的术语：</div><div class="termbox">' + terms + '</div></div>' : '') +
-      body
+      body +
+      '<div class="cta row" style="margin-top:10px"><button class="btn sm ghost grow" data-action="askAI">🆘 这题不会？求助豆包讲给你听</button></div>'
     );
   }
 
@@ -718,6 +786,7 @@
       case "beastAll": startSession(allWrongish(), "beast", "全部错题"); break;
       case "next": nextQuestion(); break;
       case "revenge": revenge(); break;
+      case "askAI": askAI(); break;
       case "submitMulti": if (SESSION && SESSION.selected && SESSION.selected.length) lockAndGrade(SESSION.selected.slice()); break;
       case "quitSession": if (SESSION && SESSION.answered > 0) renderResult(); else renderHome(); break;
       case "subjective": renderSubjectiveList(); break;
