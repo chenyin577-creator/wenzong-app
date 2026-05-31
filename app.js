@@ -151,20 +151,36 @@
     return arr;
   }
   function buildDaily(goal) {
-    var queue = dueList();
-    if (queue.length < goal) {
+    // 用户要求"新增的题目优先考核我"：把还没做过的新增题排到队首；
+    // 但给"到期复习(含错题)"预留至少一半名额，避免新题把 SRS 到期题挤出当日队列（间隔重复不能断）。
+    var due = dueList();
+    var newUnseen = newQids().filter(function (id) { var c = STATE.byQid[id]; return !c || c.timesSeen === 0; });
+    var queue = [], seen = {};
+    function push(id) { if (id && !seen[id]) { seen[id] = 1; queue.push(id); } }
+    var newCap = Math.max(0, goal - Math.min(due.length, Math.ceil(goal / 2)));
+    for (var i = 0; i < newUnseen.length && queue.length < newCap; i++) push(newUnseen[i]); // ① 新题优先(排队首)
+    for (var j = 0; j < due.length && queue.length < goal; j++) push(due[j]);                // ② 到期复习(含错题)
+    for (var k = 0; k < newUnseen.length && queue.length < goal; k++) push(newUnseen[k]);    // ③ 余下新题
+    if (queue.length < goal) {                                                               // ④ 弱区未做题补齐
       var add = unseenWeighted();
-      for (var i = 0; i < add.length && queue.length < goal; i++) queue.push(add[i]);
+      for (var x = 0; x < add.length && queue.length < goal; x++) push(add[x]);
     }
-    if (queue.length < goal) {
+    if (queue.length < goal) {                                                               // ⑤ 低盒旧题兜底
       var old = lowestBoxOld(queue);
-      for (var j = 0; j < old.length && queue.length < goal; j++) queue.push(old[j]);
+      for (var y = 0; y < old.length && queue.length < goal; y++) push(old[y]);
     }
     return queue.slice(0, goal);
   }
   function bySubject(subj) { return shuffle(Q.filter(function (q) { return q.subject === subj; }).map(function (q) { return q.id; })); }
   function byTrap(trap) { return shuffle(Q.filter(function (q) { return q.trap === trap; }).map(function (q) { return q.id; })); }
   function byTopic(topic) { return shuffle(Q.filter(function (q) { return q.topic === topic; }).map(function (q) { return q.id; })); }
+  // 新增题判定：道法八下新增(DF-23..52) + 地理专题新增(DL-33..60)。供「🆕 新题特训」与今日复习优先排前用。
+  function isNewQ(q) {
+    var m = /^(DF|DL)-(\d+)$/.exec(q.id); if (!m) return false;
+    var n = +m[2];
+    return m[1] === "DF" ? (n >= 23 && n <= 52) : (n >= 33 && n <= 60);
+  }
+  function newQids() { return shuffle(Q.filter(isNewQ).map(function (q) { return q.id; })); }
   // 错题怪兽 = 至少错过一次且尚未掌握(box<4)的题；只做对、还没巩固的"新题"不算错题
   function isWrongish(c) { return c && c.timesSeen > 0 && c.timesCorrect < c.timesSeen && c.box < 4; }
   function beastQids(beast) {
@@ -248,6 +264,8 @@
     }).join("");
 
     var wrongN = allWrongish().length;
+    var newTotal = Q.filter(isNewQ).length;
+    var newUnseenN = Q.filter(function (q) { return isNewQ(q) && (!STATE.byQid[q.id] || STATE.byQid[q.id].timesSeen === 0); }).length;
     var encourage = dleft > 0
       ? "离中考还有 <b>" + dleft + "</b> 天，今天搞定 " + goal + " 题，下限就稳一点。"
       : "今天就是中考——把速记和错题过一遍，沉住气！";
@@ -267,6 +285,7 @@
       '</div></div>' +
       '<div class="card"><h3 style="font-size:16px">各学科掌握度 <span class="muted tiny">（box≥4 的题占比）</span></h3>' + bars + '</div>' +
       '<div class="grid">' +
+        tile("newDrill", "🆕", "新题特训", newUnseenN ? (newTotal + " 道新增·未做 " + newUnseenN) : (newTotal + " 道新增·已刷完")) +
         tile("achievements", "🏅", "我的成就", "积分 · 等级 · 徽章") +
         tile("subject", "🎯", "专项弱区", "按学科集中刷") +
         tile("topicGeo", "🌏", "地理专题", "分界线·海峡·区域") +
@@ -933,6 +952,7 @@
       case "subject": renderSubjectPick(); break;
       case "subjectGo": startSession(bySubject(t.getAttribute("data-subj")), "subject", t.getAttribute("data-subj")); break;
       case "topicGeo": startSession(byTopic("地理专题"), "topic", "🌏 地理专题"); break;
+      case "newDrill": startSession(newQids(), "new", "🆕 新题特训"); break;
       case "trap": renderTrapPick(); break;
       case "trapGo": startSession(byTrap(t.getAttribute("data-trap")), "trap", t.getAttribute("data-trap")); break;
       case "beasts": renderBeasts(); break;
