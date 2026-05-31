@@ -126,6 +126,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .feedback .layer[open]>summary::before{content:"▾ "}
 .feedback .layer[open]>summary{border-bottom:1px solid #2a3550}
 .feedback .layer-body{padding:10px 12px;font-size:14.5px;line-height:1.8;white-space:pre-wrap;color:#dbe7fb}
+.feedback .layer-confuse{border-color:#5a4220;background:#1f1810}
+.feedback .layer-confuse>summary{color:#fcd9a0}
+.feedback .layer-confuse>summary::before{color:#d9a441}
+.feedback .layer-confuse[open]>summary{border-bottom-color:#5a4220}
 
 /* 求助豆包 / AI 弹窗 */
 .ask-overlay{position:fixed;inset:0;background:rgba(4,8,18,.72);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50}

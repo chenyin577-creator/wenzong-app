@@ -369,6 +369,7 @@
     var det = (window.QUESTION_DETAILS && window.QUESTION_DETAILS[q.id]) || null;
     var layers = "";
     if (det && det.detail) layers += '<details class="layer"><summary>📖 详细解析</summary><div class="layer-body">' + esc(det.detail) + '</div></details>';
+    if (det && det.confuse) layers += '<details class="layer layer-confuse"><summary>🔀 易混点对照</summary><div class="layer-body">' + esc(det.confuse) + '</div></details>';
     if (det && det.extend) layers += '<details class="layer"><summary>🎯 考点 · 真题举例 · 举一反三</summary><div class="layer-body">' + esc(det.extend) + '</div></details>';
 
     var fb = document.getElementById("fb");
@@ -416,7 +417,7 @@
     var ans = q.type === "judge" ? (q.answer === "T" ? "正确(T)" : "错误(F)") : (q.type === "multi" ? q.answer.join("") : q.answer);
     lines.push("【正确答案】" + ans);
     lines.push("");
-    lines.push("请分点告诉我：①为什么这个答案对；②其他选项／说法错在哪；③这题考什么知识点、怎么记牢；④以后遇到同类题怎么判断，并再给我一道类似的题练手。");
+    lines.push("请分点告诉我：①为什么这个答案对；②其他选项／说法错在哪；③这题考什么知识点、怎么记牢；④把这道题最容易混淆的相关知识点拿出来做系统对照（列对比表或分条讲清区别，告诉我怎么一眼区分、别再搞混）；⑤以后遇到同类题怎么判断，并再给我一道类似的题练手。");
     return lines.join("\n");
   }
   function buildSubjPrompt(q) {
@@ -425,7 +426,7 @@
     lines.push("");
     lines.push(q.prompt);
     lines.push("");
-    lines.push("请给出：①分点的参考答案（标出每问得分点）；②每问的答题思路和必须用上的关键词／术语；③我容易漏掉的角度和易错点。");
+    lines.push("请给出：①分点的参考答案（标出每问得分点）；②每问的答题思路和必须用上的关键词／术语；③我容易漏掉的角度和易错点；④这道题涉及的、容易混淆的相关知识点拿出来系统对照讲清区别。");
     return lines.join("\n");
   }
   function askAI() {
