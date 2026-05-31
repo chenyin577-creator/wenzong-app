@@ -13,6 +13,36 @@
   var DEFAULT_GOAL = 15;
   var BEASTS = ["知识怪", "审题怪", "材料怪", "表达怪"];
   var BEAST_EMOJI = { "知识怪": "📚", "审题怪": "🔍", "材料怪": "📄", "表达怪": "✍️" };
+  // 科举榜：积分晋级阶梯（min 为该等级门槛分）
+  var LEVELS = [
+    { name: "童生", emoji: "📖", min: 0 },
+    { name: "秀才", emoji: "✒️", min: 150 },
+    { name: "举人", emoji: "🎓", min: 400 },
+    { name: "贡士", emoji: "📜", min: 800 },
+    { name: "进士", emoji: "🏅", min: 1400 },
+    { name: "探花", emoji: "🌸", min: 2200 },
+    { name: "榜眼", emoji: "🥈", min: 3200 },
+    { name: "状元", emoji: "👑", min: 4500 }
+  ];
+  // 徽章目录：name → 展示用 emoji + 说明
+  var BADGES = {
+    "累计100题": { emoji: "💯", desc: "累计作答满 100 题" },
+    "累计300题": { emoji: "🎯", desc: "累计作答满 300 题" },
+    "累计500题": { emoji: "🚀", desc: "累计作答满 500 题" },
+    "3天连打卡": { emoji: "📅", desc: "连续打卡满 3 天" },
+    "7天连打卡": { emoji: "🔥", desc: "连续打卡满 7 天" },
+    "14天连打卡": { emoji: "🗓️", desc: "连续打卡满 14 天" },
+    "连对达人": { emoji: "⚡", desc: "单轮最高连对 ≥ 10" },
+    "连对宗师": { emoji: "🌟", desc: "单轮最高连对 ≥ 20" },
+    "错题猎人": { emoji: "⚔️", desc: "累计攻克旧错题 ≥ 20 道" },
+    "金榜题名": { emoji: "👑", desc: "积分晋级到状元" },
+    "文综大成": { emoji: "🏆", desc: "五科掌握度全部 ≥ 80%" },
+    "中国史过80%": { emoji: "🏯", desc: "中国史掌握度 ≥ 80%" },
+    "道法过80%": { emoji: "⚖️", desc: "道法掌握度 ≥ 80%" },
+    "地理过80%": { emoji: "🗺️", desc: "地理掌握度 ≥ 80%" },
+    "世界史过80%": { emoji: "🌍", desc: "世界史掌握度 ≥ 80%" },
+    "时政过80%": { emoji: "📰", desc: "时政掌握度 ≥ 80%" }
+  };
 
   var Q = (window.QUESTIONS || []).filter(function (q) { return q && q.id && q.type; });
   var SUBJ = window.SUBJECTIVE || [];
@@ -37,7 +67,7 @@
       subjective: {},
       stats: {
         dailyGoal: DEFAULT_GOAL, streakDays: 0, lastStudyDate: null,
-        bestCombo: 0, totalAnswered: 0, history: [], badges: []
+        bestCombo: 0, totalAnswered: 0, points: 0, revivedTotal: 0, history: [], badges: []
       }
     };
   }
@@ -52,6 +82,10 @@
       if (!s.stats.history) s.stats.history = [];
       if (!s.stats.badges) s.stats.badges = [];
       if (!s.stats.dailyGoal) s.stats.dailyGoal = DEFAULT_GOAL;
+      if (typeof s.stats.points !== "number") s.stats.points = 0;
+      if (typeof s.stats.revivedTotal !== "number") s.stats.revivedTotal = 0;
+      if (typeof s.stats.bestCombo !== "number") s.stats.bestCombo = 0;
+      if (typeof s.stats.totalAnswered !== "number") s.stats.totalAnswered = 0;
       return s;
     } catch (e) { DEGRADED = true; return MEM || (MEM = freshState()); }
   }
@@ -161,7 +195,7 @@
       queue: queue.slice(), idx: 0, mode: mode, title: title || "练习",
       answered: 0, correct: 0, combo: 0, bestCombo: 0,
       wrongIds: [], reviewQueue: [], inReview: false,
-      newMastered: 0, revived: 0, selected: null, locked: false
+      newMastered: 0, revived: 0, selected: null, locked: false, pointsGained: 0
     };
     renderQuiz();
   }
@@ -223,6 +257,7 @@
         '<div class="countdown">' + encourage + '</div></div>' +
         '<div class="streak">🔥<span class="n">' + (STATE.stats.streakDays || 0) + '</span> 天</div>' +
       '</div>' +
+      levelBanner() +
       '<div class="card"><div class="ring-wrap">' +
         '<div class="ring" style="--p:' + pct + '"><div class="lbl"><b>' + done + '</b><span>/' + goal + ' 题</span></div></div>' +
         '<div class="grow"><div style="font-weight:700;font-size:17px;margin-bottom:4px">今日目标</div>' +
@@ -231,6 +266,7 @@
       '</div></div>' +
       '<div class="card"><h3 style="font-size:16px">各学科掌握度 <span class="muted tiny">（box≥4 的题占比）</span></h3>' + bars + '</div>' +
       '<div class="grid">' +
+        tile("achievements", "🏅", "我的成就", "积分 · 等级 · 徽章") +
         tile("subject", "🎯", "专项弱区", "按学科集中刷") +
         tile("trap", "🪤", "陷阱专训", "练审题“找茬”") +
         tile("beasts", "👾", "错题怪兽", wrongN ? (wrongN + " 道待消灭") : "暂无错题") +
@@ -243,6 +279,18 @@
   }
   function tile(action, ic, t, d) {
     return '<button class="tile" data-action="' + action + '"><div class="ic">' + ic + '</div><div class="t">' + t + '</div><div class="d">' + d + '</div></button>';
+  }
+  function levelBanner() {
+    var lv = levelOf(STATE.stats.points);
+    var nextTxt = lv.next
+      ? '距 ' + lv.next.emoji + lv.next.name + ' 还差 <b>' + (lv.next.min - lv.points) + '</b> 分'
+      : '已登顶 · 状元及第 👑';
+    return '<button class="level-banner" data-action="achievements">' +
+      '<div class="lv-badge">' + lv.emoji + '</div>' +
+      '<div class="lv-mid"><div class="lv-top"><b>' + lv.name + '</b><span class="muted tiny">' + lv.points + ' 分</span></div>' +
+      '<div class="lv-bar"><i style="width:' + lv.pct + '%"></i></div>' +
+      '<div class="muted tiny">' + nextTxt + '</div></div>' +
+      '<div class="lv-go">›</div></button>';
   }
 
   /* ---- 刷题卡 ---- */
@@ -340,14 +388,18 @@
     // 统计（争议题不计分）
     if (!disputed) {
       s.answered++; if (correct) s.correct++;
-      if (correct) { s.combo++; if (s.combo > s.bestCombo) s.bestCombo = s.combo; }
-      else { s.combo = 0; }
+      if (correct) {
+        s.combo++;
+        if (s.combo > s.bestCombo) s.bestCombo = s.combo;
+        if (s.combo > (STATE.stats.bestCombo || 0)) STATE.stats.bestCombo = s.combo; // 实时同步，连对徽章当场可解锁
+      } else { s.combo = 0; }
       if (!correct) s.reviewQueue.push(q.id);
       // 复活/新掌握
       if (info.before.seen > 0 && info.before.correct === 0 && correct) s.revived++;
       if (info.before.box < 4 && card(q.id).box >= 4) s.newMastered++;
       // combo 弹幕
       var ct = comboText(s.combo); if (ct) flashCombo(ct);
+      gainPoints(q, correct, info, s);
       bumpDaily(); maybeBadges();
     }
 
@@ -486,9 +538,58 @@
     function add(b) { if (st.badges.indexOf(b) < 0) { st.badges.push(b); got.push(b); } }
     if (st.totalAnswered >= 100) add("累计100题");
     if (st.totalAnswered >= 300) add("累计300题");
+    if (st.totalAnswered >= 500) add("累计500题");
+    if (st.streakDays >= 3) add("3天连打卡");
     if (st.streakDays >= 7) add("7天连打卡");
-    SUBJECTS.forEach(function (s) { if (masteryOf(s).pct >= 80) add(s + "过80%"); });
-    if (got.length) { save(); toast("🏅 解锁徽章：" + got.join("、")); }
+    if (st.streakDays >= 14) add("14天连打卡");
+    if ((st.bestCombo || 0) >= 10) add("连对达人");
+    if ((st.bestCombo || 0) >= 20) add("连对宗师");
+    if ((st.revivedTotal || 0) >= 20) add("错题猎人");
+    if ((st.points || 0) >= 4500) add("金榜题名");
+    var all80 = true;
+    SUBJECTS.forEach(function (s) { if (masteryOf(s).pct >= 80) add(s + "过80%"); else all80 = false; });
+    if (all80) add("文综大成");
+    if (got.length) {
+      save();
+      var names = got.map(function (b) { return (BADGES[b] ? BADGES[b].emoji + " " : "🏅 ") + b; });
+      toast("🏅 解锁徽章：" + names.join("、"));
+    }
+  }
+
+  /* ---- 积分 / 等级（科举榜） ---- */
+  function levelOf(points) {
+    points = points || 0;
+    var idx = 0;
+    for (var i = 0; i < LEVELS.length; i++) { if (points >= LEVELS[i].min) idx = i; }
+    var cur = LEVELS[idx], next = LEVELS[idx + 1] || null;
+    var into = points - cur.min, span = next ? (next.min - cur.min) : 0;
+    var pct = next ? Math.min(100, Math.round(into / span * 100)) : 100;
+    return { idx: idx, name: cur.name, emoji: cur.emoji, cur: cur, next: next, points: points, into: into, span: span, pct: pct };
+  }
+  // 单题积分：难度基础分 + 弱区/攻克错题/新掌握/连对加成；答错给少量努力分（不打击）
+  function gainPoints(q, correct, info, sess) {
+    var st = STATE.stats, before = levelOf(st.points);
+    var pts = 0;
+    if (correct) {
+      var diff = q.difficulty || 1;
+      pts = 10 + (diff - 1) * 5;                                  // 难度：10/15/20
+      if (WEAK_WEIGHT[q.subject] >= 4) pts += 5;                  // 弱区加成（中国史/道法）
+      if (info && info.before && info.before.seen > 0 && info.before.correct === 0) {
+        pts += 8; st.revivedTotal = (st.revivedTotal || 0) + 1;   // 攻克旧错题
+      }
+      if (info && info.before && info.before.box < 4 && card(q.id).box >= 4) pts += 15; // 新晋掌握
+      if (sess && sess.combo > 1) pts += Math.min(sess.combo, 10); // 连对加成（封顶 +10）
+    } else {
+      pts = 2; // 努力分
+    }
+    st.points = (st.points || 0) + pts;
+    if (sess) sess.pointsGained = (sess.pointsGained || 0) + pts;
+    var after = levelOf(st.points);
+    if (after.idx > before.idx) {
+      flashCombo("🎉 晋级 " + after.emoji + " " + after.name);
+      toast("🎉 恭喜晋级：" + after.name + "！继续冲 " + (after.next ? after.next.name : "巅峰"));
+    }
+    return pts;
   }
 
   /* ---- 结算页 ---- */
@@ -499,6 +600,7 @@
     if (s.bestCombo > (STATE.stats.bestCombo || 0)) { STATE.stats.bestCombo = s.bestCombo; save(); }
 
     var acc = s.answered ? Math.round(s.correct / s.answered * 100) : 0;
+    var lvNow = levelOf(STATE.stats.points);
     var goal = STATE.stats.dailyGoal, today = answeredToday(), doneToday = today ? today.answered : 0;
     var hitGoal = doneToday >= goal;
     var praise;
@@ -509,7 +611,8 @@
     setScreen(
       '<div class="result-hero"><div class="muted">本次 ' + esc(s.title) + ' 结算</div>' +
       '<div class="big">' + s.correct + '<span class="slash">/' + s.answered + '</span></div>' +
-      '<div class="muted">正确率 ' + acc + '%</div></div>' +
+      '<div class="muted">正确率 ' + acc + '%</div>' +
+      '<div class="pts-gain">本轮 +' + (s.pointsGained || 0) + ' 分 &nbsp;·&nbsp; 当前 ' + lvNow.emoji + ' ' + lvNow.name + ' (' + lvNow.points + ')</div></div>' +
       '<div class="stat-grid">' +
         stat(s.bestCombo, "最高连对") +
         stat(s.newMastered, "新掌握") +
@@ -523,6 +626,52 @@
     );
   }
   function stat(v, l) { return '<div class="stat"><b>' + v + '</b><span>' + l + '</span></div>'; }
+
+  /* ---- 我的成就：积分 / 科举榜 / 徽章墙 ---- */
+  function renderAchievements() {
+    SESSION = null;
+    var st = STATE.stats, lv = levelOf(st.points);
+    var nextTxt = lv.next
+      ? '再得 <b>' + (lv.next.min - lv.points) + '</b> 分晋级 ' + lv.next.emoji + lv.next.name
+      : '已达最高 · 状元及第 👑';
+    var ladder = LEVELS.map(function (L, i) {
+      var stt = i < lv.idx ? "done" : (i === lv.idx ? "cur" : "lock");
+      return '<div class="ladder-row ' + stt + '">' +
+        '<span class="le">' + L.emoji + '</span>' +
+        '<span class="ln">' + L.name + '</span>' +
+        '<span class="lm muted tiny">' + L.min + ' 分</span>' +
+        '<span class="ls">' + (stt === "done" ? "✓ 已过" : (stt === "cur" ? "当前" : "🔒")) + '</span></div>';
+    }).join("");
+    var names = Object.keys(BADGES);
+    var earned = 0;
+    var wall = names.map(function (b) {
+      var got = st.badges.indexOf(b) >= 0, info = BADGES[b];
+      if (got) earned++;
+      return '<div class="badge-cell ' + (got ? "got" : "lock") + '">' +
+        '<div class="bc-emoji">' + info.emoji + '</div>' +
+        '<div class="bc-name">' + b + '</div>' +
+        '<div class="bc-desc muted tiny">' + info.desc + '</div></div>';
+    }).join("");
+    setScreen(
+      '<button class="back" data-action="home">← 返回</button><h2>我的成就 🏅</h2>' +
+      '<div class="card ach-hero">' +
+        '<div class="ach-emoji">' + lv.emoji + '</div>' +
+        '<div class="ach-name">' + lv.name + '</div>' +
+        '<div class="ach-pts">' + lv.points + ' 分</div>' +
+        '<div class="lv-bar big"><i style="width:' + lv.pct + '%"></i></div>' +
+        '<div class="muted tiny">' + nextTxt + '</div>' +
+      '</div>' +
+      '<div class="stat-grid">' +
+        stat(st.totalAnswered || 0, "累计作答") +
+        stat(st.bestCombo || 0, "最高连对") +
+        stat((st.streakDays || 0) + " 天", "连续打卡") +
+        stat(st.revivedTotal || 0, "攻克错题") +
+      '</div>' +
+      '<div class="card"><h3 style="font-size:16px">科举榜 · 等级阶梯</h3>' + ladder + '</div>' +
+      '<div class="card"><h3 style="font-size:16px">徽章墙 <span class="muted tiny">（已解锁 ' + earned + '/' + names.length + '）</span></h3>' +
+        '<div class="badge-wall">' + wall + '</div></div>'
+    );
+  }
 
   /* ---- 专项弱区 ---- */
   function renderSubjectPick() {
@@ -777,6 +926,7 @@
     var a = t.getAttribute("data-action");
     switch (a) {
       case "home": renderHome(); break;
+      case "achievements": renderAchievements(); break;
       case "daily": startSession(buildDaily(STATE.stats.dailyGoal), "daily", "今日复习"); break;
       case "subject": renderSubjectPick(); break;
       case "subjectGo": startSession(bySubject(t.getAttribute("data-subj")), "subject", t.getAttribute("data-subj")); break;
