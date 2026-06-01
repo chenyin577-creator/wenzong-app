@@ -958,12 +958,163 @@
         '<button class="btn" data-action="impDo" style="margin-top:10px">✅ 导入并合并</button></div>');
       return;
     }
+    if (mode === "qr") {
+      setScreen('<button class="back" data-action="backup">← 返回</button><h2>出码（这台旧机）📷</h2>' +
+        '<style>#qrBox svg{width:100%;height:auto;display:block}</style>' +
+        '<div class="card"><div class="muted">让<b>新手机</b>打开同一个链接 →设置→备份→<b>扫码导入</b>，对准下面的码即可，全程不用打字。</div>' +
+        '<div id="qrBox" style="background:#fff;padding:12px;border-radius:12px;max-width:320px;margin:14px auto;min-height:140px;display:flex;align-items:center;justify-content:center;color:#333;text-align:center">正在生成二维码…</div>' +
+        '<div class="muted tiny">码里只含刷题记录，无账号无隐私。扫不出就调亮屏幕、靠近一点。</div></div>');
+      showQR();
+      return;
+    }
+    if (mode === "scan") {
+      setScreen('<button class="back" data-action="backup">← 返回</button><h2>扫码导入（这台新机）📲</h2>' +
+        '<div class="card"><div class="muted">用相机对准<b>旧手机</b>「出码」页的二维码，扫到自动合并，<b>不清空</b>现有进度。</div>' +
+        '<div style="position:relative;max-width:340px;margin:12px auto">' +
+          '<video id="scanVid" playsinline muted style="width:100%;border-radius:12px;background:#000;display:block"></video>' +
+          '<canvas id="scanCan" style="display:none"></canvas>' +
+        '</div>' +
+        '<div id="scanStatus" class="muted tiny" style="text-align:center">正在打开相机…对准二维码</div>' +
+        '<div style="text-align:center;margin-top:10px"><button class="btn sm ghost" data-action="impOpen">扫不了？改用粘贴导入</button></div></div>');
+      startScan();
+      return;
+    }
     setScreen('<button class="back" data-action="settings">← 返回</button><h2>备份 / 迁移进度 📦</h2>' +
-      '<div class="card"><div class="muted">换手机、或换打开入口（github.io ↔ 备用链接）时，进度会“看起来消失”——其实是浏览器各存各的。用这里把进度<b>搬过去</b>：旧入口<b>导出</b> → 新入口<b>导入</b>。</div></div>' +
+      '<div class="card"><div class="muted">换手机、或换打开链接时，进度会“看起来消失”——其实是浏览器按链接各存各的。<b>同一个链接里升级换版本不会丢</b>；只有换手机/换链接才要搬：旧机<b>出码/导出</b> → 新机<b>扫码/导入</b>。</div></div>' +
       '<div class="grid">' +
+        tile("qrShow", "📷", "出码（旧机）", "生成二维码给新机扫") +
+        tile("qrScan", "📲", "扫码导入（新机）", "扫旧机的码 · 合并") +
         tile("expData", "📤", "导出进度", "生成存档码（含 " + nQ + " 题）") +
         tile("impOpen", "📥", "导入进度", "粘贴存档码 · 合并") +
       '</div>');
+  }
+
+  /* ===== 二维码出码 / 扫码导入（换手机·零打字；库懒加载，相机失败回退粘贴） ===== */
+  var QR = { stream: null, raf: 0, scanning: false };
+  var LOADED = {};
+  function loadScriptOnce(src) {
+    if (LOADED[src]) return LOADED[src];
+    LOADED[src] = new Promise(function (res, rej) {
+      var s = document.createElement("script");
+      s.src = src; s.async = true;
+      s.onload = function () { res(); };
+      s.onerror = function () { LOADED[src] = null; rej(new Error("load fail")); };
+      document.head.appendChild(s);
+    });
+    return LOADED[src];
+  }
+  function ensureQrcode() { return loadScriptOnce("./lib/qrcode.min.js").then(function () { if (!window.qrcode) throw new Error("no qrcode"); }); }
+  function ensureJsQR() {
+    return loadScriptOnce("./lib/jsqr.min.js").then(function () {
+      var d = (typeof window.jsQR === "function") ? window.jsQR : (window.jsQR && window.jsQR.default);
+      if (!d) throw new Error("no jsQR");
+      return d;
+    });
+  }
+  // 压缩编码：deflate-raw + base64，让进度塞进单个二维码；不可用时回退明文 WZ1
+  function bytesToB64(bytes) { var s = "", CH = 0x8000; for (var i = 0; i < bytes.length; i += CH) { s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH)); } return btoa(s); }
+  function b64ToBytes(b64) { var bin = atob(b64), n = bin.length, u = new Uint8Array(n); for (var i = 0; i < n; i++) u[i] = bin.charCodeAt(i); return u; }
+  function deflateB64(str) {
+    var cs = new CompressionStream("deflate-raw");
+    var w = cs.writable.getWriter(); w.write(new TextEncoder().encode(str)); w.close();
+    return new Response(cs.readable).arrayBuffer().then(function (buf) { return bytesToB64(new Uint8Array(buf)); });
+  }
+  function inflateB64(b64) {
+    var ds = new DecompressionStream("deflate-raw");
+    var w = ds.writable.getWriter(); w.write(b64ToBytes(b64)); w.close();
+    return new Response(ds.readable).arrayBuffer().then(function (buf) { return new TextDecoder().decode(new Uint8Array(buf)); });
+  }
+  function encodeStateQR() {
+    var json = JSON.stringify(STATE);
+    if (window.CompressionStream && window.Response) return deflateB64(json).then(function (b) { return "WZ2:" + b; });
+    return Promise.resolve(encodeState()); // 回退 WZ1 明文
+  }
+  function decodeAny(code) {
+    code = (code || "").trim();
+    var j = code.indexOf("WZ2:");
+    if (j >= 0) {
+      var b = code.slice(j + 4).replace(/\s+/g, "");
+      return inflateB64(b).then(function (json) {
+        var obj = JSON.parse(json);
+        if (!obj || typeof obj !== "object" || !obj.byQid) throw new Error("bad");
+        return obj;
+      });
+    }
+    return Promise.resolve(decodeState(code)); // WZ1 / 明文：复用既有同步解析
+  }
+  function showQR() {
+    var box = document.getElementById("qrBox"); if (!box) return;
+    ensureQrcode().then(encodeStateQR).then(function (code) {
+      if (code.length > 1800) { qrTooBig(box); return; }
+      try {
+        var qr = qrcode(0, "L"); qr.addData(code); qr.make();
+        box.innerHTML = qr.createSvgTag({ scalable: true, margin: 1 });
+      } catch (e) { qrTooBig(box); }
+    }).catch(function () {
+      box.innerHTML = '二维码组件没加载出来。检查网络后重试，或返回用「导出进度」复制存档码。';
+    });
+  }
+  function qrTooBig(box) {
+    box.innerHTML = '<div class="muted">你的记录较多，单个二维码放不下 😅<br>改用<b>复制存档码</b>更稳：到新手机「导入进度」里粘贴。</div>' +
+      '<button class="btn sm" data-action="expData" style="margin-top:10px">📤 改用复制存档码</button>';
+  }
+  function stopScan() {
+    if (!QR) return;
+    QR.scanning = false;
+    if (QR.raf) { cancelAnimationFrame(QR.raf); QR.raf = 0; }
+    if (QR.stream) { try { QR.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} QR.stream = null; }
+  }
+  function scanFail(msg) {
+    var el = document.getElementById("scanStatus");
+    if (el) el.innerHTML = msg + ' <button class="btn sm" data-action="impOpen" style="margin-top:8px">📥 改用粘贴导入</button>';
+  }
+  function startScan() {
+    var video = document.getElementById("scanVid"), canvas = document.getElementById("scanCan");
+    if (!video || !canvas) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (location.protocol !== "https:" && location.hostname !== "localhost")
+        return scanFail("扫码要在 https 链接下用（githack 链接即可）；本地双击打开没有相机。");
+      return scanFail("这台设备/浏览器不支持相机扫码。");
+    }
+    ensureJsQR().then(function (decode) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function (stream) {
+        QR.stream = stream; QR.scanning = true;
+        video.setAttribute("playsinline", ""); video.srcObject = stream;
+        var pp = video.play(); if (pp && pp.catch) pp.catch(function () {});
+        var ctx = canvas.getContext("2d", { willReadFrequently: true });
+        function tick() {
+          if (!QR.scanning) return;
+          if (video.readyState >= 2 && video.videoWidth) {
+            var w = video.videoWidth, h = video.videoHeight;
+            canvas.width = w; canvas.height = h;
+            ctx.drawImage(video, 0, 0, w, h);
+            var res;
+            try { res = decode(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" }); } catch (e) {}
+            if (res && res.data) { onScanned(res.data); return; }
+          }
+          QR.raf = requestAnimationFrame(tick);
+        }
+        QR.raf = requestAnimationFrame(tick);
+      }).catch(function (err) {
+        var nm = err && err.name;
+        if (nm === "NotAllowedError" || nm === "SecurityError") scanFail("相机权限被拒。请在浏览器允许相机，或");
+        else if (nm === "NotFoundError" || nm === "OverconstrainedError") scanFail("没找到可用相机，或");
+        else scanFail("打不开相机，或");
+      });
+    }).catch(function () { scanFail("扫码组件没加载出来（检查网络），或"); });
+  }
+  function onScanned(text) {
+    stopScan();
+    decodeAny(text).then(function (inc) {
+      var n = Object.keys(inc.byQid || {}).length;
+      if (!confirm("扫到 " + n + " 道题的记录，导入并与当前进度合并（重复取记录更多的一方，不清空现有进度）。继续？")) { renderBackup("scan"); return; }
+      mergeInto(STATE, inc); save();
+      toast("✅ 扫码导入完成：已合并 " + n + " 题记录");
+      renderHome();
+    }).catch(function () {
+      toast("❌ 这个码不是本 App 的存档码，换一个再试");
+      renderBackup("scan");
+    });
   }
 
   /* ================= 组卷 / 打印 ================= */
@@ -1092,6 +1243,7 @@
   on(screen, "click", function (ev) {
     var t = ev.target.closest("[data-action],[data-opt],[data-goal],[data-seg],[data-subj],[data-trap],[data-beast]");
     if (!t) return;
+    stopScan(); // 任何点击/导航都关掉扫码相机，避免泄漏
 
     // 选项作答
     if (t.hasAttribute("data-opt")) { chooseOption(t.getAttribute("data-opt"), t); return; }
@@ -1137,6 +1289,8 @@
       case "impOpen": renderBackup("import"); break;
       case "copyData": copyExport(); break;
       case "impDo": doImport(); break;
+      case "qrShow": renderBackup("qr"); break;
+      case "qrScan": renderBackup("scan"); break;
       case "resetAsk":
         if (confirm("确定清空全部刷题进度、打卡和徽章？此操作不可撤销。")) {
           STATE = freshState(); save(); toast("已重置"); renderHome();
