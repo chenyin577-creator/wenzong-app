@@ -240,11 +240,15 @@
   function bySubject(subj) { return shuffle(Q.filter(function (q) { return q.subject === subj; }).map(function (q) { return q.id; })); }
   function byTrap(trap) { return shuffle(Q.filter(function (q) { return q.trap === trap; }).map(function (q) { return q.id; })); }
   function byTopic(topic) { return shuffle(Q.filter(function (q) { return q.topic === topic; }).map(function (q) { return q.id; })); }
-  // 新增题判定：道法八下新增(DF-23..52) + 地理专题新增(DL-33..60)。供「🆕 新题特训」与今日复习优先排前用。
+  // 新增题判定：道法八下、地理专题、中国史专题、九下世界史。供「🆕 新题特训」与今日复习优先排前用。
   function isNewQ(q) {
-    var m = /^(DF|DL)-(\d+)$/.exec(q.id); if (!m) return false;
+    var m = /^(DF|DL|ZGS|SJS)-(\d+)$/.exec(q.id); if (!m) return false;
     var n = +m[2];
-    return m[1] === "DF" ? (n >= 23 && n <= 52) : (n >= 33 && n <= 60);
+    if (m[1] === "DF") return n >= 23 && n <= 52;
+    if (m[1] === "DL") return n >= 33 && n <= 60;
+    if (m[1] === "ZGS") return n >= 36 && n <= 55;
+    if (m[1] === "SJS") return n >= 14 && n <= 33;
+    return false;
   }
   function newQids() { return shuffle(Q.filter(isNewQ).map(function (q) { return q.id; })); }
   // 错题怪兽 = 至少错过一次且尚未掌握(box<4)的题；只做对、还没巩固的"新题"不算错题
@@ -355,6 +359,8 @@
         tile("newDrill", "🆕", "新题特训", newUnseenN ? (newTotal + " 道新增·未做 " + newUnseenN) : (newTotal + " 道新增·已刷完")) +
         tile("achievements", "🏅", "我的成就", "积分 · 等级 · 徽章") +
         tile("subject", "🎯", "专项弱区", "按学科集中刷") +
+        tile("topicChina", "🏯", "中国史专题", "制度·统一·近现代") +
+        tile("topicWorld9", "🌍", "九下世界史", "一战后·二战·冷战") +
         tile("topicGeo", "🌏", "地理专题", "分界线·海峡·区域") +
         tile("trap", "🪤", "陷阱专训", "练审题“找茬”") +
         tile("beasts", "👾", "错题怪兽", wrongN ? (wrongN + " 道待消灭") : "暂无错题") +
@@ -1263,6 +1269,8 @@
       case "daily": startSession(buildDaily(STATE.stats.dailyGoal), "daily", "今日复习"); break;
       case "subject": renderSubjectPick(); break;
       case "subjectGo": startSession(bySubject(t.getAttribute("data-subj")), "subject", t.getAttribute("data-subj")); break;
+      case "topicChina": startSession(byTopic("中国史专题"), "topic", "🏯 中国史专题"); break;
+      case "topicWorld9": startSession(byTopic("世界史九下"), "topic", "🌍 九下世界史"); break;
       case "topicGeo": startSession(byTopic("地理专题"), "topic", "🌏 地理专题"); break;
       case "newDrill": startSession(newQids(), "new", "🆕 新题特训"); break;
       case "trap": renderTrapPick(); break;
